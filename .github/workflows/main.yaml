@@ -11,38 +11,49 @@ jobs:
       contents: read
       packages: read
       statuses: write
+      pull-requests: write
 
     steps:
-
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
-      - name: Run Super‑Linter
+      # 1️⃣ Run Super-Linter (do NOT stop job on errors)
+      - name: Run Super-Linter
         id: superlinter
         uses: super-linter/super-linter@v8.3.0
+        continue-on-error: true
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          ENABLE_GITHUB_ACTIONS_STEP_SUMMARY: "true"  # ensures a summary is written :contentReference[oaicite:1]{index=1}
+          REMOVE_ANSI_COLOR_CODES_FROM_OUTPUT: "true"
 
+      # 2️⃣ Capture logs
+      - name: Capture Super-Linter logs
+        run: |
+          echo "Saving Super-Linter logs..."
+          cat $GITHUB_WORKSPACE/super-linter.log > lint.log || true
+          head -n 1500 lint.log > lint_trimmed.log
+
+      # 3️⃣ Summarize with Gemini
       - name: Summarize Lint Logs with Gemini
         id: gemini
         uses: google-github-actions/run-gemini-cli@v0.1.16
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
           prompt: |
-            Below are the Super‑Linter results from this pull request lint check:
+            These are Super-Linter results from a pull request.
 
             ```
-            $(cat $GITHUB_STEP_SUMMARY)
+            $(cat lint_trimmed.log)
             ```
 
-            Please provide:
-            1) A concise summary of issues found
-            2) The most actionable takeaways
-            3) Suggestions for how to fix the highest‑priority items
+            Please:
+            - Summarize the failures by tool
+            - Identify the highest-risk issues
+            - Give concrete fix suggestions
 
+      # 4️⃣ Comment on PR
       - name: Comment Summary on Pull Request
         run: |
           gh pr comment ${{ github.event.pull_request.number }} \
