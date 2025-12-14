@@ -9,8 +9,6 @@ jobs:
 
     permissions:
       contents: read
-      packages: read
-      statuses: write
       pull-requests: write
 
     steps:
@@ -19,7 +17,7 @@ jobs:
         with:
           fetch-depth: 0
 
-      # 1️⃣ Run Super-Linter (do NOT stop job on errors)
+      # 1️⃣ Run Super-Linter and capture output
       - name: Run Super-Linter
         id: superlinter
         uses: super-linter/super-linter@v8.3.0
@@ -27,13 +25,22 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           REMOVE_ANSI_COLOR_CODES_FROM_OUTPUT: "true"
+          LOG_LEVEL: "DEBUG"
 
-      # 2️⃣ Capture logs
+      # 2️⃣ Extract logs from GitHub Actions log stream
       - name: Capture Super-Linter logs
         run: |
           echo "Saving Super-Linter logs..."
-          cat $GITHUB_WORKSPACE/super-linter.log > lint.log || true
-          head -n 1500 lint.log > lint_trimmed.log
+          {
+            echo "=== SUPER LINTER OUTPUT ==="
+            grep -E "ERROR|NOTICE|Successfully linted|Errors found" \
+              "$GITHUB_STEP_SUMMARY" || true
+          } > lint.log
+
+          head -n 1000 lint.log > lint_trimmed.log
+
+          echo "Logs captured:"
+          cat lint_trimmed.log
 
       # 3️⃣ Summarize with Gemini
       - name: Summarize Lint Logs with Gemini
@@ -42,16 +49,16 @@ jobs:
         with:
           gemini_api_key: ${{ secrets.GEMINI_API_KEY }}
           prompt: |
-            These are Super-Linter results from a pull request.
+            These are Super-Linter results from a pull request:
 
             ```
             $(cat lint_trimmed.log)
             ```
 
             Please:
-            - Summarize the failures by tool
-            - Identify the highest-risk issues
-            - Give concrete fix suggestions
+            1) Summarize failed linters
+            2) Highlight security-relevant issues first
+            3) Provide concrete fix commands
 
       # 4️⃣ Comment on PR
       - name: Comment Summary on Pull Request
